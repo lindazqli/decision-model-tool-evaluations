@@ -106,10 +106,112 @@ Latency is measured request/selection-path time, excludes client pacing, and use
 
 Prioritize a shadow integration for **request-versus-call alignment and user-rule interpretation**, with disclosure screening as an additional advisory check using trusted classification and destination evidence. Keep exact scope/approval matching, RBAC, policy precedence, cancellation, retry limits, and schema validation in code. Do not use model evidence-sufficiency judgments as the sole stopping condition.
 
+## How we tested
+
+### Shared procedure
+
+We ran custom Python evaluation harnesses against deployed Decision-1 and GPT-5 mini models in a Microsoft Foundry project. These were live model API calls over synthetic scenarios, not simulated model results and not end-to-end agent runs.
+
+1. Author each scenario with its task/context, policy, allowed answers and expected answer. Freeze the expected labels before that cohort's inference. Reference labels were assistant-authored, not independently human-reviewed.
+2. Send the same underlying scenario facts and decision policy to both models. Decision-1 used its native choice-question API with named alternatives; GPT-5 mini used chat completions with minimal reasoning and a strict JSON output schema. API representations differed, so prompts were not byte-identical.
+3. Run each scenario twice per comparison path. Record the selected answer, response validity, latency and API-reported input/output tokens. Retain original responses locally.
+4. Score the returned label against the frozen expected answer or accepted route set. No LLM judge, probability threshold adjustment, or post-run relabeling was used for the reported six evaluations.
+5. Aggregate accuracy over attempted trials, latency over valid responses, and token usage over valid responses with reported usage. Keep filtered outputs visible rather than rewriting their prompts or weakening filters.
+
+The six reported evaluations comprise 350 distinct scenarios and 1,400 model attempts: 400 for selection and 200 for each of the other five areas. Selection also made 200 actual search RPCs. This count excludes development probes, earlier pilots and the separately discussed policy-bearing routing experiment.
+
+### 1. Tool selection: full catalog versus actual search
+
+| Setup item | What we did |
+|---|---|
+| Dataset | 100 requests: 40 GitHub reads, 12 paraphrases, 12 approved writes, eight web tasks, eight local-processing tasks, eight skill-selection tasks, four semantic queries and eight no-match/no-tool tasks. |
+| Catalog | 62 real executable capabilities. Search/dispatcher wrappers were excluded from the executable count and web aliases normalized. |
+| Decision-1 input | User request plus the complete compressed catalog and a no-tool option. Descriptions included the first paragraph and required argument names. |
+| Search + GPT input | Call the actual toolbox's `tool_search` with the original user query and `limit=5`; give GPT the returned descriptions and a no-tool option. No query rewriting, iterative retrieval or wider shortlist. |
+| Output and scoring | Choose a capability or no tool. Compare with frozen labels; some plausible alternative routes were penalized by this study's exact labels. |
+| Controlled setup | With user approval, create temporary flat and search-enabled toolboxes from existing configurations. Verify their live manifests match except for search, randomize candidate/arm ordering, then delete both toolboxes after the run. |
+| What was not tested | Argument generation, execution, correctness of a completed task or safety of performing an approved write. |
+
+For diagnosis, we separately checked whether the expected tool appeared in the five retrieved results. It did in 138/184 tool-needed trials. Of the search path's 49 errors, 46 were retrieval misses; only three occurred with the expected tool present.
+
+### 2. Custom approval rules: classify a fixed proposed call
+
+| Setup item | What we did |
+|---|---|
+| Dataset | 50 scenarios: eight reads, ten writes, ten confidentiality/Bing cases, eight combined/scoped rules, six ambiguities, four misleading/untrusted-instruction cases and four approval-lifecycle/multi-step cases. |
+| Input to both models | User-authored rule, exact proposed invocation, relevant tool contract, and any needed synthetic document excerpt, publication evidence or authenticated approval record. Expected answers and explanations were withheld. |
+| Allowed outputs | `proceed`, `ask_approval`, `ask_clarification`. |
+| Expected-label mix | 19 proceed, 25 ask-approval and six ask-clarification scenarios. |
+| Effect interpretation | Models inferred effects from method contracts, arguments, Python snippets or shell commands. We did not supply answer-revealing `writes_data` or `trusted_effects` flags. |
+| Scoring | Score the fixed invocation independently of routing. Count both ordinary label errors and filtered attempts against all-request accuracy; also inspect required-approval misses and unnecessary prompts. |
+
+For example, a read-only Bing operation can require approval because its outgoing query contains confidential information. An expired approval or changed arguments must not inherit permission from an earlier call. These are interpretation checkpoints, not an installed dynamic-approval system.
+
+Ten separate development cases preceded the main cohort. The published accuracy uses the 50 main scenarios, not those probes. GPT produced 98 valid outputs from 100 attempts; two content-filtered attempts had no reported usage. Both models incorrectly proceeded twice on the same unresolved rule-conflict scenario.
+
+### 3. Request versus proposed call: intent alignment
+
+| Setup item | What we did |
+|---|---|
+| Dataset | 50 scenarios varying target, recipient, branch, operation, content, quantity/time constraints and missing context. |
+| Input to both models | Authenticated user request, supplied conversation context, exact proposed arguments and operation contract. Retrieved text was treated as untrusted data. |
+| Allowed outputs | `matches`, `mismatch`, `uncertain`. |
+| Label rule | Matches preserves the requested action and scope; mismatch has an observable contradiction; uncertain lacks essential facts about scope or effect. |
+| Important separation | A requested write can match intent even when a separate approval check is still required. |
+
+The evaluation checks a proposal, not model-generated arguments. A main-branch update against a dev-only request should be a mismatch; missing deletion scope should trigger uncertainty. We inspected false acceptances separately from overall accuracy.
+
+### 4. Next-step choice: respond to a supplied tool result
+
+| Setup item | What we did |
+|---|---|
+| Dataset | 50 scenarios covering usable results, empty searches, transient failures, unavailable sources, missing identifiers, access denial, retry budgets and cancellation. |
+| Input to both models | User task and constraints, workflow/retry policy, supplied tool result, and any explicitly available authorized alternatives. |
+| Allowed outputs | `answer`, `broaden_query`, `retry_same`, `alternate_source`, `ask_user`, `stop`. |
+| Label rule | Choose the step justified by the result and policy. Retry only where permitted; do not retry access denial or escalate privileges; stop after cancellation or exhausted budget. |
+| What was not tested | Executing the selected step or proving that it eventually completes the task. |
+
+This isolates the decision after a result. For example, an empty overly narrow search can justify broadening within scope, while exhausted retries require stopping. Explicit budgets and cancellation should still be enforced outside the model.
+
+### 5. Evidence sufficiency: assess a fixed evidence bundle
+
+| Setup item | What we did |
+|---|---|
+| Dataset | 50 scenarios varying environment, tenant, date/version, pagination, units, source authority, redaction and unresolved disagreement. |
+| Input to both models | Exact requested question plus supplied evidence and its scope/provenance context. No outside knowledge was needed or permitted by the policy. |
+| Allowed outputs | `sufficient`, `insufficient`, `conflicting`. |
+| Label rule | Sufficient supports every requested claim in scope; insufficient lacks suitable evidence; conflicting contains relevant credible disagreement not resolved by the supplied context. |
+| Error analysis | Inspect false sufficiency separately: accepting unsupported evidence can prematurely stop retrieval. |
+
+This did not evaluate the quality of a generated answer. It evaluated whether the evidence was enough to answer. Both models accepted staging evidence for a production question, a shared wrong-scope failure.
+
+### 6. Confidential disclosure: inspect outgoing content
+
+| Setup item | What we did |
+|---|---|
+| Dataset | 50 scenarios covering direct quotes, paraphrases, classified identifiers, reversible encoding, attachments, headers, redaction, public/generic overlap, local-only processing and uncertainty. |
+| Input to both models | Proposed outgoing request, supplied source information, authoritative sensitivity/publication context and destination evidence. All sensitive-looking fixture content was synthetic. |
+| Allowed outputs | `clear`, `disclosure`, `uncertain`. |
+| Label rule | Disclosure transmits a protected fact/value; clear contains established public/generic information, removes protected details, or is verified local-only; uncertain lacks necessary sensitivity, content or destination facts. |
+| Error analysis | Inspect protected-disclosure-to-clear errors, uncertain-to-clear errors and local-only false alarms separately. |
+| What was not tested | Real data transfer, production DLP integration, or permission to transmit data. |
+
+Confidential material elsewhere in context is not itself disclosure unless sent. Conversely, a read-only tool can disclose data in a query. Some uncertainty fixtures used placeholders that could be read as literal safe strings; those cases limit interpretation of the scores.
+
+### Measurement and study limitations
+
+Latency was measured around live API requests, excluding deliberate client pacing. For search selection, total path latency includes the search RPC plus GPT response time. Median and p95 describe observed service/request timings, not controlled hardware performance; shared-service load can affect them.
+
+Tokens are the native API's reported input plus output, not a common tokenizer or dollar cost. Decision-1 generally returned one choice token, whereas GPT returned a structured answer. Search token usage was unavailable: the 494-token number measures only the GPT selector and cannot establish total search-path token consumption.
+
+The four narrow tasks began with 14 intent and 12 each next-step, evidence and disclosure cases. We retained those responses and added 36/38/38/38 new cases after observing earlier errors, reaching 50 in each area. The combined scores are exploratory, not a pristine independent held-out test. Repetitions and related contrast cases are correlated; where uncertainty intervals were calculated, related cases were grouped rather than treating every repetition as independent.
+
+No proposed backend actions executed. Temporary toolbox creation/deletion was authorized setup, not a predicted action. Approval decisions were made on fixed reference invocations, not generated calls, and no real confidential data was transmitted.
+
 ## Evidence limits
 
 These were synthetic, assistant-labeled experiments against a Microsoft Foundry project, with labels frozen before inference and raw responses retained locally. Repetitions and contrast pairs are not independent tasks. Some approval trials were content-filtered for GPT and are included in all-request scores; no filters were weakened. Per-use-case samples are small. No proposed tools executed, no real confidential data was transferred, and no end-to-end task success or production safety rate was measured. Selection descriptions and policy semantics affect scores. Deterministic checks can already solve many explicit-rule cases; model value must be demonstrated on harder interpretation tasks.
 
 ## Publication scope
 
-This repository contains the findings report only. Supporting datasets, detailed study reports, scripts and raw responses have not been published here. The results cannot be independently reproduced from this README alone.
+This repository contains the findings report and test-method description. Supporting datasets, detailed study reports, scripts and raw responses have not been published here. The methodology explains how the experiments were run, but the exact results cannot be independently reproduced from this README alone.
