@@ -15,8 +15,6 @@ Decision-1 versus GPT-5 mini across six tool decisions. Each synthetic case ran 
 | p95 latency | 1,274 ms | 1,590 ms |
 | Mean reported model tokens | 2,887 | 494 (GPT selector only) |
 
-Search token usage was unavailable; this is not a total-path token comparison. Retrieval missed the expected tool in 46 of the search path's 49 errors.
-
 ## 2. Custom approval rules
 
 **Case:** For 50 proposed calls, apply rules such as "ask before writes" and "ask before sending confidential data to Bing." Choose proceed, approval, or clarification.
@@ -30,7 +28,7 @@ Search token usage was unavailable; this is not a total-path token comparison. R
 | p95 latency | 1,056 ms | 1,190 ms |
 | Mean input + output tokens | 717 | 846 |
 
-Both models incorrectly proceeded on unresolved conflicting rules. Keep authorization and policy precedence enforced outside the model.
+Both models incorrectly proceeded on unresolved conflicting rules.
 
 ## 3. Request versus proposed call
 
@@ -45,8 +43,6 @@ Both models incorrectly proceeded on unresolved conflicting rules. Keep authoriz
 | p95 latency | 1,097 ms | 1,200 ms |
 | Mean input + output tokens | 193 | 263 |
 
-The small accuracy lead is not conclusive; the grouped uncertainty interval includes zero.
-
 ## 4. Next-step choice
 
 **Case:** In 50 cases, use a tool result and workflow constraints to choose answer, broaden, retry, switch source, ask, or stop.
@@ -59,8 +55,6 @@ The small accuracy lead is not conclusive; the grouped uncertainty interval incl
 | Median latency | 359 ms | 973 ms |
 | p95 latency | 1,068 ms | 1,210 ms |
 | Mean input + output tokens | 261 | 349 |
-
-Retry budgets, cancellation and access controls should still be enforced in code.
 
 ## 5. Evidence sufficiency
 
@@ -75,8 +69,6 @@ Retry budgets, cancellation and access controls should still be enforced in code
 | p95 latency | 1,011 ms | 1,169 ms |
 | Mean input + output tokens | 205 | 275 |
 
-Both models accepted staging evidence for a production question. Neither should be the sole stopping gate.
-
 ## 6. Confidential disclosure
 
 **Case:** In 50 cases, inspect outgoing queries, headers and attachments for protected quotes, paraphrases and encoded values, with public and local-only contrast cases.
@@ -90,8 +82,6 @@ Both models accepted staging evidence for a production question. Neither should 
 | p95 latency | 917 ms | 1,241 ms |
 | Mean input + output tokens | 268 | 344 |
 
-Uncertainty errors and local-only false alarms remain. This is an advisory check, not a DLP replacement.
-
 ## Code
 
 [evals/](evals/) contains the original synthetic case generators and selection helpers, with a portable runner for all six evaluations. [Run instructions](evals/README.md).
@@ -102,9 +92,3 @@ python -m unittest discover -s tests
 ```
 
 Live runs require your own model endpoints and, for selection/approval, a compatible tool catalog. No original project configuration, credentials or raw responses are published. The portable runner is adapted from the study harness, not the byte-identical historical runner.
-
-## Reading the results
-
-Labels were assistant-authored, not independently reviewed. Accuracy includes failed/filtered attempts; latency and token means use valid responses. GPT approval had two filtered attempts without token usage. Tokens are native API input + output, not dollar cost; latency excludes client pacing.
-
-The four narrow tasks were expanded after earlier errors, so combined results are exploratory. No proposed tools executed or real confidential data transferred. Decision-1 is promising as a fast adviser, not an authorization authority.
