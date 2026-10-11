@@ -43,3 +43,17 @@ For a controlled selection comparison, configure your search toolbox with the sa
 `cases.json` and `protocol.json` freeze the labels and dataset hash. Each task writes raw local JSONL responses and an analysis JSON with accuracy, median/p95 latency, and mean reported model tokens. Filter/invalid outputs remain failures; no model mistakes are retried. One authentication refresh on HTTP 401 is permitted. Partial runs cannot be scored as complete and are not automatically resumed.
 
 The four narrow task datasets combine original and later expansion cohorts. Synthetic strings marked confidential are fixtures, not actual private data. Local catalog snapshots and responses can contain your own metadata: review them before sharing; `runs/` is ignored by Git.
+
+## Stateful workflow comparison
+
+```powershell
+python evals\workflow_eval.py build --output runs\workflow
+python evals\workflow_eval.py run --output runs\workflow
+python evals\workflow_eval.py analyze --output runs\workflow
+```
+
+This uses the same model endpoints but no live toolbox. It runs 50 tasks through GPT-only native tool calling, GPT plus Decision-1 routing/approval, and GPT plus deterministic exact-rule guards. All tools are stateful local mocks; web search returns fixtures and approval is simulated. GPT generates arguments and final answers in every arm.
+
+Each task has an eight-GPT-step budget and one trial per arm. The hybrid receives the full tool contracts as context while its callable tools are restricted by Decision-1; this avoids hiding argument schemas, but adds prompt overhead. A final answer is scored against expected values and mock state, with mandatory write read-back. The code guard uses structured facts and exact fixture matching, not a general-purpose DLP engine.
+
+Workflow latency sums live model request durations and excludes pacing, simulated user time and real tool/network latency. Raw wall time is also retained. Token usage includes every GPT and Decision call, including failed tasks. Different native tokenizers are not a common cost unit; use deployment-specific input/output prices for monetary comparisons.
