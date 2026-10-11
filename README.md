@@ -1,5 +1,7 @@
 # Decision-1 for tool decisions
 
+**Latest: [all six isolated workflow evaluations](six-workflow-results.md)** — 50 tasks per evaluation, three paths, 900 live trials. Each scenario has side-by-side workflow accuracy, latency and total model-token metrics. None demonstrated an improvement over GPT-only on this controlled synthetic task set.
+
 Decision-1 versus GPT-5 mini across six tool decisions. Each synthetic case ran twice. These results measure decisions, not executed task success or production safety.
 
 **New workflow test:** adding Decision-1 at every step did not improve this GPT agent. Median active latency increased from 3.29 to 4.56 seconds, with more total reported model tokens and missing write verification. [Three-arm workflow results and code](workflow-results.md). The tables below are component benchmarks, not evidence of end-to-end customer benefit.
